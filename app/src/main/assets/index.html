@@ -1927,6 +1927,7 @@ button, input, textarea, select { max-width: 100%; }
 document.addEventListener('DOMContentLoaded', () => {
 'use strict';
 const $ = id => document.getElementById(id);
+let _uiLang = localStorage.getItem('amika_ui_lang') || 'fa';
 
 /* ══ System prompts ══ */
 const SYSTEM_PROMPTS = {
@@ -4316,7 +4317,7 @@ document.addEventListener('keydown', e => {
 /* ══════════════════════════════════════════════════════
    UI LANGUAGE TOGGLE — فقط رابط کاربری، نه زبان پیام
    ══════════════════════════════════════════════════════ */
-const UI_TRANS = {
+var UI_TRANS = {
   fa: {
     dir:'rtl', htmlLang:'fa',
     btnLabel:'EN',
@@ -4407,7 +4408,7 @@ const UI_TRANS = {
   }
 };
 
-let _uiLang = localStorage.getItem('amika_ui_lang') || 'fa';
+_uiLang = localStorage.getItem('amika_ui_lang') || 'fa';
 
 function applyUILang(lang) {
   _uiLang = lang;
