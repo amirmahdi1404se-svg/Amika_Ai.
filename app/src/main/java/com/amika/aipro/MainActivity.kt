@@ -5,6 +5,8 @@ import android.annotation.SuppressLint
 import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
+import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -29,6 +31,8 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import org.json.JSONObject
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.Locale
 
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
@@ -36,6 +40,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var webView: WebView
     private var tts: TextToSpeech? = null
     private var isTtsReady = false
+    private var mediaPlayer: MediaPlayer? = null
     private var speechRecognizer: SpeechRecognizer? = null
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private var pendingVoiceLang: String = "fa-IR"
@@ -138,10 +143,21 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
+    private fun releaseMediaPlayer() {
+        try {
+            mediaPlayer?.stop()
+        } catch (_: Exception) {}
+        try {
+            mediaPlayer?.release()
+        } catch (_: Exception) {}
+        mediaPlayer = null
+    }
+
     inner class NativeBridge {
         @JavascriptInterface
         fun speak(text: String, langCode: String) {
             runOnUiThread {
+                releaseMediaPlayer()
                 if (!isTtsReady) {
                     webView.evaluateJavascript("window.__onNativeTtsError && window.__onNativeTtsError()", null)
                     return@runOnUiThread
@@ -165,9 +181,70 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
 
         @JavascriptInterface
+        fun playUrlAudio(audioUrl: String) {
+            Thread {
+                try {
+                    val conn = (URL(audioUrl).openConnection() as HttpURLConnection).apply {
+                        requestMethod = "GET"
+                        connectTimeout = 8000
+                        readTimeout = 8000
+                        setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36")
+                    }
+                    if (conn.responseCode != 200) {
+                        throw Exception("HTTP ${conn.responseCode}")
+                    }
+                    val tmpFile = File(cacheDir, "tts_chunk_${System.currentTimeMillis()}.mp3")
+                    conn.inputStream.use { input ->
+                        tmpFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    conn.disconnect()
+
+                    runOnUiThread {
+                        try {
+                            releaseMediaPlayer()
+                            val mp = MediaPlayer().apply {
+                                setAudioAttributes(
+                                    AudioAttributes.Builder()
+                                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                                        .build()
+                                )
+                                setDataSource(tmpFile.absolutePath)
+                                setOnCompletionListener {
+                                    tmpFile.delete()
+                                    releaseMediaPlayer()
+                                    webView.evaluateJavascript("window.__onNativeUrlAudioDone && window.__onNativeUrlAudioDone()", null)
+                                }
+                                setOnErrorListener { _, _, _ ->
+                                    tmpFile.delete()
+                                    releaseMediaPlayer()
+                                    webView.evaluateJavascript("window.__onNativeUrlAudioError && window.__onNativeUrlAudioError()", null)
+                                    true
+                                }
+                                prepare()
+                                start()
+                            }
+                            mediaPlayer = mp
+                        } catch (_: Exception) {
+                            tmpFile.delete()
+                            webView.evaluateJavascript("window.__onNativeUrlAudioError && window.__onNativeUrlAudioError()", null)
+                        }
+                    }
+                } catch (_: Exception) {
+                    runOnUiThread {
+                        webView.evaluateJavascript("window.__onNativeUrlAudioError && window.__onNativeUrlAudioError()", null)
+                    }
+                }
+            }.start()
+        }
+
+        @JavascriptInterface
         fun stopSpeak() {
             runOnUiThread {
                 try { tts?.stop() } catch (_: Exception) {}
+                releaseMediaPlayer()
             }
         }
 
@@ -290,6 +367,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     override fun onDestroy() {
         try { tts?.stop(); tts?.shutdown() } catch (_: Exception) {}
+        releaseMediaPlayer()
         try { speechRecognizer?.destroy() } catch (_: Exception) {}
         super.onDestroy()
     }
