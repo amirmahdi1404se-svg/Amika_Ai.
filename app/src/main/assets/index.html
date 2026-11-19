@@ -1092,6 +1092,74 @@ kbd{
 .voice-status{font-size:10px;line-height:1.7;color:var(--text2);min-height:32px}
 @media(max-width:520px){.voice-launcher{right:12px;bottom:94px;width:44px;height:44px}.voice-panel{right:10px;bottom:148px;width:min(320px,calc(100vw - 20px))}}
 
+
+/* ══ Smart Per-Paragraph RTL/LTR Direction (Persian RTL, English LTR) ══ */
+.msg-body, .msg-main-content { unicode-bidi: plaintext; }
+.msg-body p, .msg-body li, .msg-body h1, .msg-body h2, .msg-body h3, .msg-body h4, .msg-body blockquote,
+.msg-main-content p, .msg-main-content li, .msg-main-content h1, .msg-main-content h2, .msg-main-content h3, .msg-main-content h4, .msg-main-content blockquote {
+  unicode-bidi: plaintext;
+}
+.msg-body [dir="rtl"], .msg-main-content [dir="rtl"] {
+  direction: rtl;
+  text-align: right;
+}
+.msg-body [dir="ltr"], .msg-main-content [dir="ltr"] {
+  direction: ltr;
+  text-align: left;
+}
+.msg-body ul, .msg-body ol, .msg-main-content ul, .msg-main-content ol {
+  padding-inline-start: 22px;
+  padding-right: 0;
+}
+.msg-body th, .msg-body td, .msg-main-content th, .msg-main-content td {
+  text-align: start;
+}
+.msg-body blockquote, .msg-main-content blockquote {
+  border-right: none;
+  border-inline-start: 2.5px solid var(--blue);
+}
+
+/* ══ Crystal Glass Native Select & Voice Panel Dropdown ══ */
+select, .voice-panel select, select.field {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: rgba(14, 24, 46, 0.88) !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237dd3fc' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: left 12px center !important;
+  padding-left: 32px !important;
+  color: #f1f5fb !important;
+  border: 1px solid rgba(255, 255, 255, 0.28) !important;
+  border-radius: 14px !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 6px 18px rgba(0, 0, 0, 0.35) !important;
+  color-scheme: dark;
+}
+html[dir="ltr"] select, html[dir="ltr"] .voice-panel select, html[dir="ltr"] select.field {
+  background-position: right 12px center !important;
+  padding-left: 12px !important;
+  padding-right: 32px !important;
+}
+select option, select optgroup {
+  background-color: #0b1324 !important;
+  color: #f1f5fb !important;
+}
+.voice-panel .cg-select-wrap { margin-bottom: 4px; }
+.voice-panel .cg-select-trigger {
+  background: var(--ax-glass-soft) !important;
+  border: 1px solid rgba(255,255,255,.26) !important;
+  border-radius: 13px !important;
+  padding: 8px 12px !important;
+  font-size: 12px !important;
+}
+.voice-panel .cg-select-menu {
+  max-height: 190px !important;
+  border-radius: 16px !important;
+}
+.voice-panel .cg-select-opt {
+  padding: 7px 10px !important;
+  font-size: 11.5px !important;
+}
+
 </style>
 
 <style id="portrait-sidebar-fix">
@@ -2341,31 +2409,35 @@ function addMessage(role,text,model='',imageSrc=null,actions=true,ts=Date.now(),
     }
     body.innerHTML=safeMarkdown(rest||text||'');
   } else {
-    body.innerHTML=esc(text||'').replace(/\n/g,'<br>');
+    const rawU = String(text||'');
+    body.setAttribute('dir', /[\u0600-\u06FF]/.test(rawU) ? 'rtl' : 'ltr');
+    body.innerHTML=esc(rawU).replace(/\n/g,'<br>');
   }
   bubble.append(body);
 
   if(actions){
     const tools=document.createElement('div');tools.className='msg-tools';
     if(role==='assistant'){
-      const copy=document.createElement('button');copy.type='button';copy.className='msg-btn';copy.textContent='▣ کپی پاسخ';
+      const _t = UI_TRANS[_uiLang] || UI_TRANS.fa;
+      const copy=document.createElement('button');copy.type='button';copy.className='msg-btn';copy.textContent=_t.copyResp;
       copy.onclick=()=>copyText(body.innerText,copy);
       const copyMd=document.createElement('button');copyMd.type='button';copyMd.className='msg-btn';copyMd.textContent='📋 Markdown';
       copyMd.onclick=()=>copyText(text||body.innerText,copyMd);
-      const regen=document.createElement('button');regen.type='button';regen.className='msg-btn';regen.textContent='↻ دوباره';
+      const regen=document.createElement('button');regen.type='button';regen.className='msg-btn';regen.textContent=_t.regenBtn;
       regen.onclick=regenerate;
       const bmBtn=document.createElement('button');bmBtn.type='button';bmBtn.className='msg-btn';
       const isBm=state.bookmarks.some(b=>b.ts===ts);
       bmBtn.classList.toggle('bookmarked',isBm);
-      bmBtn.textContent=isBm?'★ ذخیره شد':'☆ ذخیره';
+      bmBtn.textContent=isBm?_t.savedBtn:_t.saveBtn;
       bmBtn.onclick=()=>toggleBookmark(ts, text||body.innerText, model, bmBtn);
-      const speakBtn=document.createElement('button');speakBtn.type='button';speakBtn.className='msg-btn';speakBtn.textContent='🔊 خواندن';
+      const speakBtn=document.createElement('button');speakBtn.type='button';speakBtn.className='msg-btn';speakBtn.textContent=_t.speakBtn;
       speakBtn.onclick=()=>toggleSpeak(speechTextFrom(body),speakBtn);
       tools.append(copy,copyMd,speakBtn,regen,bmBtn);
     } else {
-      const copy=document.createElement('button');copy.type='button';copy.className='msg-btn';copy.textContent='▣ کپی';
+      const _t = UI_TRANS[_uiLang] || UI_TRANS.fa;
+      const copy=document.createElement('button');copy.type='button';copy.className='msg-btn';copy.textContent=_t.copyUser;
       copy.onclick=()=>copyText(body.innerText,copy);
-      const edit=document.createElement('button');edit.type='button';edit.className='msg-btn';edit.textContent='✎ ویرایش و ارسال';
+      const edit=document.createElement('button');edit.type='button';edit.className='msg-btn';edit.textContent=_t.editBtn;
       edit.onclick=()=>editMessage(text||body.innerText);
       tools.append(copy,edit);
     }
@@ -2437,6 +2509,23 @@ function enhance(root) {
     actions.append(dlCodeBtn,wrapBtn,copyBtn);
     toolbar.append(langSpan,actions);
     pre.prepend(toolbar);
+  });
+
+  // Apply RTL strictly to Persian/Arabic paragraphs & LTR to English/other paragraphs
+  root.querySelectorAll('.msg-body, .msg-main-content').forEach(container => {
+    const blocks = container.querySelectorAll('p, li, h1, h2, h3, h4, h5, h6, blockquote, td, th');
+    if (blocks.length) {
+      blocks.forEach(el => {
+        if (el.closest('pre')) return;
+        const txt = (el.textContent || '').trim();
+        if (!txt) return;
+        const hasFa = /[\u0600-\u06FF]/.test(txt);
+        el.setAttribute('dir', hasFa ? 'rtl' : 'ltr');
+      });
+    } else {
+      const txt = (container.textContent || '').trim();
+      if (txt) container.setAttribute('dir', /[\u0600-\u06FF]/.test(txt) ? 'rtl' : 'ltr');
+    }
   });
 
   if(window.hljs) {
@@ -3170,7 +3259,7 @@ async function loadFreeModels(manual=false){
     }
     const o=sel.options[sel.selectedIndex];if(!o) return;
     const id=o.value;
-    $('mtName').textContent=id==='openrouter/free'?'انتخاب خودکار':o.textContent.split(' · ')[0];
+    $('mtName').textContent=id==='openrouter/free'?((typeof _uiLang!=='undefined'&&_uiLang==='en')?'Auto Smart':'انتخاب خودکار'):o.textContent.split(' · ')[0];
     const [c,l]=prov(id);const av=$('mtAv');av.style.background=c;av.textContent=l;
   };
   trig.addEventListener('click',open);
@@ -3759,17 +3848,25 @@ function axNative(chunks, from, lang, voice, alive, onDone, onFail) {
   try { window.speechSynthesis.cancel(); window.speechSynthesis.resume(); } catch {}
   setTimeout(next, 80);
 }
-/* موتور ۲: صدای آنلاین فارسی/انگلیسی (وقتی دستگاه صدای فارسی ندارد) */
+/* موتور ۲: صدای آنلاین فارسی/انگلیسی (پخش مستقیم از طریق هسته بومی اندروید یا مرورگر) */
 function axOnline(chunks, from, tl, alive, onDone, onFail) {
   let idx = from;
   const play = () => {
     if (!alive()) return;
     if (idx >= chunks.length) { onDone(); return; }
-    const a = new Audio(), my = idx;
+    const my = idx;
+    const url = 'https://translate.googleapis.com/translate_tts?ie=UTF-8&client=gtx&tl=' + tl + '&q=' + encodeURIComponent(chunks[idx]);
+    if (window.AmikaNative && typeof window.AmikaNative.playUrlAudio === 'function') {
+      window.__onNativeUrlAudioDone = () => { if (!alive()) return; idx++; play(); };
+      window.__onNativeUrlAudioError = () => { if (!alive()) return; onFail(my); };
+      window.AmikaNative.playUrlAudio(url);
+      return;
+    }
+    const a = new Audio();
     ttsAudio = a; a.preload = 'auto'; a.referrerPolicy = 'no-referrer';
     a.onended = () => { if (!alive() || ttsAudio !== a) return; idx++; play(); };
     a.onerror = () => { if (!alive() || ttsAudio !== a) return; onFail(my); };
-    a.src = 'https://translate.googleapis.com/translate_tts?ie=UTF-8&client=tw-ob&tl=' + tl + '&q=' + encodeURIComponent(chunks[idx]);
+    a.src = url;
     const pr = a.play();
     if (pr && pr.catch) pr.catch(() => { if (!alive() || ttsAudio !== a) return; onFail(my); });
   };
@@ -4236,7 +4333,30 @@ const UI_TRANS = {
     shortcuts:'⌨️ کلیدهای میانبر',
     clear:'🗑 پاک‌کردن گفتگوی جاری',
     webSearch:'جست‌وجوی وب',
-    inputPH:'جست‌وجو یا هر چیزی بپرس...',
+    inputPH:'پیام خود را بنویسید...',
+    autoModelName:'انتخاب خودکار',
+    copyResp:'▣ کپی پاسخ',
+    copyUser:'▣ کپی',
+    speakBtn:'🔊 خواندن',
+    regenBtn:'↻ دوباره',
+    saveBtn:'☆ ذخیره',
+    savedBtn:'★ ذخیره شد',
+    editBtn:'✎ ویرایش و ارسال',
+    voiceTitle:'🎙️ دستیار صوتی Amika',
+    voiceLabel:'صدای پاسخ Amika',
+    voiceAutoOpt:'انتخاب خودکار صدای فارسی',
+    voiceSetup:'🔓 اجازه میکروفون + تست صدا',
+    voicePush:'🎤 صحبت کن',
+    voiceLive:'🔴 مکالمه زنده',
+    voiceHint:'برای صحبت، یکی از حالت‌ها را انتخاب کن.',
+    sugCards:[
+      {cat:'💻 کدنویسی', title:'برنامه‌نویسی Full-Stack', desc:'کد کامل، تمیز و قابل اجرا در تمام زبان‌ها'},
+      {cat:'🖼️ تحلیل تصویر', title:'OCR و تحلیل هوشمند', desc:'بررسی عکس، تمرین، ارور یا دیاگرام'},
+      {cat:'🧮 ریاضی', title:'حل مسئله ریاضی', desc:'حساب، جبر، آمار، گسسته و مهندسی'},
+      {cat:'🛠️ دیباگ', title:'رفع باگ و بهینه‌سازی', desc:'آنالیز کد، کشف خطا و بازنویسی بهینه'},
+      {cat:'🧠 استدلال', title:'تحلیل عمیق و Chain-of-Thought', desc:'تفکر عمیق برای مسائل پیچیده'},
+      {cat:'🌐 ترجمه', title:'ترجمه حرفه‌ای چندزبانه', desc:'فارسی، انگلیسی، عربی، آلمانی و غیره'}
+    ],
     modes:{auto:['✦','هوشمند'],code:['💻','کدنویسی'],vision:['🖼️','تحلیل تصویر'],math:['🧮','ریاضی'],reason:['🧠','استدلال عمیق'],write:['✍️','نوشتن'],translate:['🌐','ترجمه']},
     welcomeTitle:'Amika AI Pro · هوشمندترین دستیار رایگان',
     welcomeSub:'دسترسی به جدیدترین مدل‌های رایگان جهان از یک جا: Nemotron 3 Ultra 550B، Nemotron 3.5 Super VL، Gemma 4 31B، Cohere North Code و لیست زنده OpenRouter'
@@ -4258,6 +4378,29 @@ const UI_TRANS = {
     clear:'🗑 Clear Current Chat',
     webSearch:'Web Search',
     inputPH:'Search or ask anything...',
+    autoModelName:'Auto Smart',
+    copyResp:'▣ Copy',
+    copyUser:'▣ Copy',
+    speakBtn:'🔊 Read Aloud',
+    regenBtn:'↻ Regenerate',
+    saveBtn:'☆ Save',
+    savedBtn:'★ Saved',
+    editBtn:'✎ Edit & Resend',
+    voiceTitle:'🎙️ Amika Voice Assistant',
+    voiceLabel:'Amika Response Voice',
+    voiceAutoOpt:'Auto-detect Persian / English Voice',
+    voiceSetup:'🔓 Enable Mic + Test Voice',
+    voicePush:'🎤 Push to Talk',
+    voiceLive:'🔴 Live Conversation',
+    voiceHint:'Tap Push to Talk or Live Conversation to speak.',
+    sugCards:[
+      {cat:'💻 Coding', title:'Full-Stack Programming', desc:'Complete, clean, runnable code in any language'},
+      {cat:'🖼️ Vision', title:'OCR & Smart Image Analysis', desc:'Analyze photos, homework, errors, or diagrams'},
+      {cat:'🧮 Math', title:'Math Problem Solver', desc:'Arithmetic, algebra, statistics, and engineering'},
+      {cat:'🛠️ Debug', title:'Bug Fixing & Optimization', desc:'Line-by-line code review and clean fixes'},
+      {cat:'🧠 Reasoning', title:'Deep Chain-of-Thought', desc:'Step-by-step analysis for complex problems'},
+      {cat:'🌐 Translate', title:'Pro Multilingual Translation', desc:'Persian, English, Arabic, German, and more'}
+    ],
     modes:{auto:['✦','Smart'],code:['💻','Coding'],vision:['🖼️','Vision'],math:['🧮','Math'],reason:['🧠','Deep Reasoning'],write:['✍️','Writing'],translate:['🌐','Translate']},
     welcomeTitle:'Amika AI Pro · Smartest Free Assistant',
     welcomeSub:'Access the world\'s latest free models in one place: Nemotron 3 Ultra 550B, Nemotron 3.5 Super VL, Gemma 4 31B, Cohere North Code and OpenRouter live list'
@@ -4353,6 +4496,57 @@ function applyUILang(lang) {
   if(wh) wh.textContent = t.welcomeTitle;
   const ws2 = document.querySelector('.welcome-sub');
   if(ws2) ws2.textContent = t.welcomeSub;
+
+  // suggestion cards
+  document.querySelectorAll('#sugGrid .sug-card').forEach((card, idx) => {
+    const item = t.sugCards[idx];
+    if(!item) return;
+    const cat = card.querySelector('.sug-cat');
+    const b = card.querySelector('b');
+    const sp = card.querySelector('span:not(.sug-cat)');
+    if(cat) cat.textContent = item.cat;
+    if(b) b.textContent = item.title;
+    if(sp) sp.textContent = item.desc;
+  });
+
+  // auto model trigger label
+  if(els.model && els.model.value === 'openrouter/free') {
+    const mt = $('mtName');
+    if(mt) mt.textContent = t.autoModelName;
+  }
+
+  // voice panel texts
+  const vh = document.querySelector('#voicePanel .voice-head span');
+  if(vh) vh.textContent = t.voiceTitle;
+  const vl = document.querySelector('label[for="voiceSelect"]');
+  if(vl) vl.textContent = t.voiceLabel;
+  const vsFirst = $('voiceSelect')?.querySelector('option[value=""]');
+  if(vsFirst) vsFirst.textContent = t.voiceAutoOpt;
+  const vsb = $('voiceSetupBtn');
+  if(vsb) vsb.textContent = t.voiceSetup;
+  const vpb = $('voicePushBtn');
+  if(vpb && voiceCaptureMode !== 'push') vpb.textContent = t.voicePush;
+  const vlb = $('voiceLiveBtn');
+  if(vlb && !voiceLiveActive) vlb.textContent = t.voiceLive;
+  const vst = $('voiceStatus');
+  if(vst && !voiceCaptureMode && !voiceLiveActive) vst.textContent = t.voiceHint;
+
+  // existing message action buttons
+  document.querySelectorAll('.message.assistant .msg-tools').forEach(tools => {
+    const btns = tools.querySelectorAll('.msg-btn');
+    if(btns[0]) btns[0].textContent = t.copyResp;
+    if(btns[2] && !btns[2].classList.contains('speaking')) btns[2].textContent = t.speakBtn;
+    if(btns[3]) btns[3].textContent = t.regenBtn;
+    if(btns[4]) btns[4].textContent = btns[4].classList.contains('bookmarked') ? t.savedBtn : t.saveBtn;
+  });
+  document.querySelectorAll('.message.user .msg-tools').forEach(tools => {
+    const btns = tools.querySelectorAll('.msg-btn');
+    if(btns[0]) btns[0].textContent = t.copyUser;
+    if(btns[1]) btns[1].textContent = t.editBtn;
+  });
+
+  // sync custom glass dropdowns if initialized
+  if(window.__syncAllGlassSelects) window.__syncAllGlassSelects();
 }
 
 $('langToggle')?.addEventListener('click', () => {
@@ -4364,6 +4558,89 @@ loadSaved();
 // اعمال زبان ذخیره‌شده پس از load
 applyUILang(_uiLang);
 loadFreeModels();
+
+
+/* ══ Auto-Upgrade All <select> Elements to Crystal Glass Dropdowns ══ */
+(function(){
+  const wrappers = [];
+  function upgradeSelect(sel) {
+    if (!sel || sel.classList.contains('model-select') || sel.dataset.cgUpgraded) return;
+    sel.dataset.cgUpgraded = '1';
+
+    const wrap = document.createElement('div');
+    wrap.className = 'cg-select-wrap';
+    sel.parentNode.insertBefore(wrap, sel);
+    wrap.appendChild(sel);
+    sel.classList.add('cg-select-native');
+
+    const trig = document.createElement('button');
+    trig.type = 'button';
+    trig.className = 'cg-select-trigger';
+    const txtSpan = document.createElement('span');
+    txtSpan.dir = 'auto';
+    txtSpan.style.overflow = 'hidden';
+    txtSpan.style.textOverflow = 'ellipsis';
+    txtSpan.style.whiteSpace = 'nowrap';
+    const caret = document.createElement('span');
+    caret.className = 'cg-caret';
+    caret.textContent = '▾';
+    trig.append(txtSpan, caret);
+
+    const menu = document.createElement('div');
+    menu.className = 'cg-select-menu';
+    menu.setAttribute('role', 'listbox');
+
+    wrap.append(trig, menu);
+
+    function sync() {
+      const opt = sel.options[sel.selectedIndex];
+      txtSpan.textContent = opt ? opt.textContent : '';
+      menu.replaceChildren();
+      [...sel.options].forEach(o => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'cg-select-opt' + (o.value === sel.value ? ' active' : '');
+        const l = document.createElement('span');
+        l.dir = 'auto';
+        l.textContent = o.textContent;
+        b.append(l);
+        if (o.value === sel.value) {
+          const chk = document.createElement('span');
+          chk.className = 'cg-chk';
+          chk.textContent = '✓';
+          b.append(chk);
+        }
+        b.onclick = (ev) => {
+          ev.stopPropagation();
+          sel.value = o.value;
+          sel.dispatchEvent(new Event('change'));
+          sync();
+          wrap.classList.remove('open');
+        };
+        menu.appendChild(b);
+      });
+    }
+
+    trig.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const wasOpen = wrap.classList.contains('open');
+      wrappers.forEach(w => w.wrap.classList.remove('open'));
+      if (!wasOpen) { sync(); wrap.classList.add('open'); }
+    });
+
+    const mo = new MutationObserver(sync);
+    mo.observe(sel, { childList: true, subtree: true, characterData: true });
+    sel.addEventListener('change', sync);
+    sync();
+    wrappers.push({ wrap, sync });
+  }
+
+  document.querySelectorAll('select').forEach(upgradeSelect);
+  document.addEventListener('click', (e) => {
+    wrappers.forEach(({ wrap }) => { if (!wrap.contains(e.target)) wrap.classList.remove('open'); });
+  });
+  window.__syncAllGlassSelects = () => wrappers.forEach(({ sync }) => sync());
+})();
 
 window.__handleAndroidBack = function() {
   if (ctxBackdrop && ctxBackdrop.classList.contains('open')) { closeMsgContextMenu(); return true; }
@@ -4483,4 +4760,3 @@ window.__handleAndroidBack = function() {
 </script>
 </body>
 </html>
-
