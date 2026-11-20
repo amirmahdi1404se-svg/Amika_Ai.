@@ -404,7 +404,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                             try {
                                 val pageHtml = httpGetString(href, 4500)
                                 if (pageHtml.isNotBlank()) {
-                                    val pMatches = Regex("<p[^>]*>([\s\S]*?)</p>", RegexOption.IGNORE_CASE)
+                                    val pMatches = Regex("<p[^>]*>([\\s\\S]*?)</p>", RegexOption.IGNORE_CASE)
                                         .findAll(pageHtml)
                                         .map { cleanHtmlText(it.groupValues[1]) }
                                         .filter { it.length > 55 }
