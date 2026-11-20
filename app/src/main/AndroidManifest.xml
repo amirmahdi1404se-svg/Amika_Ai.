@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 
     <queries>
         <intent>
@@ -17,10 +19,10 @@
 
     <application
         android:allowBackup="true"
+        android:extractNativeLibs="true"
         android:hardwareAccelerated="true"
-        android:icon="@drawable/ic_launcher"
-        android:roundIcon="@drawable/ic_launcher"
         android:label="Amika AI Pro"
+        android:requestLegacyExternalStorage="true"
         android:supportsRtl="true"
         android:theme="@style/Theme.AppCompat.NoActionBar"
         android:usesCleartextTraffic="true">
