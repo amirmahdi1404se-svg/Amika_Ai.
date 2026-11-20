@@ -20,23 +20,86 @@ jobs:
           distribution: 'temurin'
 
       - name: Download Offline Persian TTS Engine & Model
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p app/libs app/src/main/assets/tts-fa
 
-          # دانلود موتور Sherpa-ONNX برای اندروید
-          curl -fSL --retry 3 \
-            -o app/libs/sherpa-onnx.aar \
-            "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.10.30/sherpa-onnx-1.10.30.aar"
+          python3 - << 'EOF'
+          import json, os, urllib.request
 
-          # دانلود مدل صوتی آفلاین فارسی (Piper Amir Medium)
-          curl -fSL --retry 3 \
-            -o tts-fa.tar.bz2 \
-            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fa_IR-amir-medium.tar.bz2"
+          headers = {"User-Agent": "Amika-Builder"}
+          tok = os.environ.get("GH_TOKEN")
+          if tok:
+              headers["Authorization"] = f"Bearer {tok}"
 
-          tar -xjf tts-fa.tar.bz2
-          cp -r vits-piper-fa_IR-amir-medium/* app/src/main/assets/tts-fa/
-          rm -rf tts-fa.tar.bz2 vits-piper-fa_IR-amir-medium
+          def fetch_json(url):
+              req = urllib.request.Request(url, headers=headers)
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  return json.loads(r.read().decode("utf-8"))
 
+          # 1. یافتن خودکار جدیدترین فایل .aar کتابخانه sherpa-onnx
+          releases = fetch_json("https://api.github.com/repos/k2-fsa/sherpa-onnx/releases?per_page=15")
+          aar_url = None
+          for rel in releases:
+              for asset in rel.get("assets", []):
+                  name = asset.get("name", "")
+                  if name.endswith(".aar") and "sherpa-onnx" in name and "tts" not in name.lower():
+                      aar_url = asset["browser_download_url"]
+                      break
+              if aar_url:
+                  break
+          if not aar_url:
+              for rel in releases:
+                  for asset in rel.get("assets", []):
+                      if asset.get("name", "").endswith(".aar"):
+                          aar_url = asset["browser_download_url"]
+                          break
+                  if aar_url:
+                      break
+          assert aar_url, "No .aar asset found in sherpa-onnx releases!"
+          print("AAR_URL=" + aar_url)
+
+          # 2. یافتن خودکار مدل صوتی فارسی Piper در ریلیز tts-models
+          tts_rel = fetch_json("https://api.github.com/repos/k2-fsa/sherpa-onnx/releases/tags/tts-models")
+          model_url = None
+          for asset in tts_rel.get("assets", []):
+              name = asset.get("name", "")
+              if "fa_IR-amir-medium" in name and name.endswith(".tar.bz2"):
+                  model_url = asset["browser_download_url"]
+                  break
+          if not model_url:
+              for asset in tts_rel.get("assets", []):
+                  name = asset.get("name", "")
+                  if "vits-piper-fa_IR" in name and name.endswith(".tar.bz2"):
+                      model_url = asset["browser_download_url"]
+                      break
+          assert model_url, "No Persian TTS model found!"
+          print("MODEL_URL=" + model_url)
+
+          with open("/tmp/tts_urls.env", "w") as f:
+              f.write(f'AAR_URL="{aar_url}"\nMODEL_URL="{model_url}"\n')
+          EOF
+
+          source /tmp/tts_urls.env
+          echo "Downloading AAR: $AAR_URL"
+          curl -fSL --retry 3 -o app/libs/sherpa-onnx.aar "$AAR_URL"
+
+          echo "Downloading Persian Model: $MODEL_URL"
+          curl -fSL --retry 3 -o tts-fa.tar.bz2 "$MODEL_URL"
+
+          mkdir -p /tmp/tts_extract
+          tar -xjf tts-fa.tar.bz2 -C /tmp/tts_extract
+          MODEL_DIR=$(find /tmp/tts_extract -mindepth 1 -maxdepth 1 -type d | head -n 1)
+          cp -r "$MODEL_DIR"/* app/src/main/assets/tts-fa/
+
+          # اطمینان از وجود نام فایل مورد انتظار MainActivity.kt
+          if [ ! -f app/src/main/assets/tts-fa/fa_IR-amir-medium.onnx ]; then
+            ONNX_FILE=$(find app/src/main/assets/tts-fa -maxdepth 1 -name "*.onnx" | head -n 1)
+            cp "$ONNX_FILE" app/src/main/assets/tts-fa/fa_IR-amir-medium.onnx
+          fi
+
+          rm -rf tts-fa.tar.bz2 /tmp/tts_extract /tmp/tts_urls.env
           ls -lh app/libs/
           ls -lh app/src/main/assets/tts-fa/
 
