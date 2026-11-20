@@ -6,6 +6,8 @@ import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
@@ -29,11 +31,17 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.k2fsa.sherpa.onnx.OfflineTts
+import com.k2fsa.sherpa.onnx.OfflineTtsConfig
+import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
+import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
@@ -44,6 +52,12 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var speechRecognizer: SpeechRecognizer? = null
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private var pendingVoiceLang: String = "fa-IR"
+
+    // هسته صوتی آفلاین فارسی (Sherpa-ONNX + Piper)
+    private var offlinePersianTts: OfflineTts? = null
+    private var activeAudioTrack: AudioTrack? = null
+    private val ttsExecutor = Executors.newSingleThreadExecutor()
+    private val ttsSessionId = AtomicInteger(0)
 
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -61,6 +75,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         window.navigationBarColor = android.graphics.Color.parseColor("#04070e")
 
         tts = TextToSpeech(this, this)
+
+        // آماده‌سازی مدل آفلاین فارسی در پس‌زمینه
+        ttsExecutor.execute { initOfflinePersianTts() }
 
         webView = WebView(this)
         setContentView(webView)
@@ -123,6 +140,150 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         webView.loadUrl("file:///android_asset/index.html")
     }
 
+    private fun copyAssetFolder(assetPath: String, destDir: File) {
+        val list = assets.list(assetPath) ?: return
+        if (list.isEmpty()) {
+            destDir.parentFile?.mkdirs()
+            assets.open(assetPath).use { input ->
+                destDir.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+        } else {
+            destDir.mkdirs()
+            for (item in list) {
+                copyAssetFolder("$assetPath/$item", File(destDir, item))
+            }
+        }
+    }
+
+    @Synchronized
+    private fun initOfflinePersianTts(): OfflineTts? {
+        if (offlinePersianTts != null) return offlinePersianTts
+        return try {
+            val targetDir = File(filesDir, "tts-fa")
+            val modelFile = File(targetDir, "fa_IR-amir-medium.onnx")
+            val tokensFile = File(targetDir, "tokens.txt")
+            val dataDir = File(targetDir, "espeak-ng-data")
+
+            if (!modelFile.exists() || !tokensFile.exists() || !dataDir.exists()) {
+                copyAssetFolder("tts-fa", targetDir)
+            }
+
+            val config = OfflineTtsConfig(
+                model = OfflineTtsModelConfig(
+                    vits = OfflineTtsVitsModelConfig(
+                        model = modelFile.absolutePath,
+                        tokens = tokensFile.absolutePath,
+                        dataDir = dataDir.absolutePath
+                    ),
+                    numThreads = 2,
+                    debug = false,
+                    provider = "cpu"
+                )
+            )
+            offlinePersianTts = OfflineTts(assetManager = null, config = config)
+            offlinePersianTts
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun stopAudioTrack() {
+        try {
+            activeAudioTrack?.pause()
+            activeAudioTrack?.flush()
+            activeAudioTrack?.stop()
+        } catch (_: Exception) {}
+        try {
+            activeAudioTrack?.release()
+        } catch (_: Exception) {}
+        activeAudioTrack = null
+    }
+
+    private fun speakPersianOffline(text: String) {
+        val mySession = ttsSessionId.incrementAndGet()
+        stopAudioTrack()
+
+        ttsExecutor.execute {
+            try {
+                val engine = initOfflinePersianTts()
+                if (engine == null) {
+                    runOnUiThread {
+                        webView.evaluateJavascript("window.__onNativeTtsError && window.__onNativeTtsError()", null)
+                    }
+                    return@execute
+                }
+
+                // تقسیم متن به جمله‌های کوتاه برای پخش سریع و روان
+                val sentences = text
+                    .split(Regex("(?<=[.!؟?!\\n؛])\\s+"))
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+
+                val sampleRate = engine.sampleRate()
+                val minBuf = AudioTrack.getMinBufferSize(
+                    sampleRate,
+                    AudioFormat.CHANNEL_OUT_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT
+                ).coerceAtLeast(4096)
+
+                val track = AudioTrack.Builder()
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build()
+                    )
+                    .setAudioFormat(
+                        AudioFormat.Builder()
+                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                            .setSampleRate(sampleRate)
+                            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                            .build()
+                    )
+                    .setBufferSizeInBytes(minBuf * 2)
+                    .setTransferMode(AudioTrack.MODE_STREAM)
+                    .build()
+
+                activeAudioTrack = track
+                track.play()
+
+                for (sentence in sentences) {
+                    if (ttsSessionId.get() != mySession) break
+                    val audio = engine.generate(text = sentence, sid = 0, speed = 1.0f)
+                    if (ttsSessionId.get() != mySession) break
+
+                    val samples = audio.samples
+                    val pcm = ShortArray(samples.size) { i ->
+                        (samples[i] * 32767f).coerceIn(-32768f, 32767f).toInt().toShort()
+                    }
+                    var offset = 0
+                    val chunkSize = 2048
+                    while (offset < pcm.size && ttsSessionId.get() == mySession) {
+                        val len = minOf(chunkSize, pcm.size - offset)
+                        track.write(pcm, offset, len)
+                        offset += len
+                    }
+                }
+
+                stopAudioTrack()
+                if (ttsSessionId.get() == mySession) {
+                    runOnUiThread {
+                        webView.evaluateJavascript("window.__onNativeTtsDone && window.__onNativeTtsDone()", null)
+                    }
+                }
+            } catch (_: Exception) {
+                stopAudioTrack()
+                if (ttsSessionId.get() == mySession) {
+                    runOnUiThread {
+                        webView.evaluateJavascript("window.__onNativeTtsError && window.__onNativeTtsError()", null)
+                    }
+                }
+            }
+        }
+    }
+
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             isTtsReady = true
@@ -144,12 +305,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun releaseMediaPlayer() {
-        try {
-            mediaPlayer?.stop()
-        } catch (_: Exception) {}
-        try {
-            mediaPlayer?.release()
-        } catch (_: Exception) {}
+        try { mediaPlayer?.stop() } catch (_: Exception) {}
+        try { mediaPlayer?.release() } catch (_: Exception) {}
         mediaPlayer = null
     }
 
@@ -158,13 +315,22 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         fun speak(text: String, langCode: String) {
             runOnUiThread {
                 releaseMediaPlayer()
+                try { tts?.stop() } catch (_: Exception) {}
+
+                // برای فارسی مستقیم از موتور آفلاین داخل APK استفاده می‌شود
+                if (langCode.startsWith("fa")) {
+                    speakPersianOffline(text)
+                    return@runOnUiThread
+                }
+
+                ttsSessionId.incrementAndGet()
+                stopAudioTrack()
+
                 if (!isTtsReady) {
                     webView.evaluateJavascript("window.__onNativeTtsError && window.__onNativeTtsError()", null)
                     return@runOnUiThread
                 }
-                tts?.stop()
                 val locale = when {
-                    langCode.startsWith("fa") -> Locale("fa", "IR")
                     langCode.startsWith("ar") -> Locale("ar")
                     langCode.startsWith("de") -> Locale.GERMAN
                     langCode.startsWith("fr") -> Locale.FRENCH
@@ -190,14 +356,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                         readTimeout = 8000
                         setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36")
                     }
-                    if (conn.responseCode != 200) {
-                        throw Exception("HTTP ${conn.responseCode}")
-                    }
+                    if (conn.responseCode != 200) throw Exception("HTTP ${conn.responseCode}")
                     val tmpFile = File(cacheDir, "tts_chunk_${System.currentTimeMillis()}.mp3")
                     conn.inputStream.use { input ->
-                        tmpFile.outputStream().use { output ->
-                            input.copyTo(output)
-                        }
+                        tmpFile.outputStream().use { output -> input.copyTo(output) }
                     }
                     conn.disconnect()
 
@@ -242,8 +404,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         @JavascriptInterface
         fun stopSpeak() {
+            ttsSessionId.incrementAndGet()
             runOnUiThread {
                 try { tts?.stop() } catch (_: Exception) {}
+                stopAudioTrack()
                 releaseMediaPlayer()
             }
         }
@@ -366,9 +530,13 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     override fun onDestroy() {
+        ttsSessionId.incrementAndGet()
         try { tts?.stop(); tts?.shutdown() } catch (_: Exception) {}
+        stopAudioTrack()
+        try { offlinePersianTts?.release() } catch (_: Exception) {}
         releaseMediaPlayer()
         try { speechRecognizer?.destroy() } catch (_: Exception) {}
+        ttsExecutor.shutdownNow()
         super.onDestroy()
     }
 }
