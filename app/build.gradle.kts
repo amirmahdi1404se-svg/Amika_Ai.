@@ -15,6 +15,10 @@ android {
         versionName = "10.0"
     }
 
+    androidResources {
+        noCompress += listOf("onnx")
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -31,6 +35,7 @@ android {
 }
 
 dependencies {
+    implementation(files("libs/sherpa-onnx.aar"))
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("androidx.activity:activity-ktx:1.8.2")
