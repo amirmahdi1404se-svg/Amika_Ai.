@@ -19,6 +19,27 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Download Offline Persian TTS Engine & Model
+        run: |
+          mkdir -p app/libs app/src/main/assets/tts-fa
+
+          # دانلود موتور Sherpa-ONNX برای اندروید
+          curl -fSL --retry 3 \
+            -o app/libs/sherpa-onnx.aar \
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.10.30/sherpa-onnx-1.10.30.aar"
+
+          # دانلود مدل صوتی آفلاین فارسی (Piper Amir Medium)
+          curl -fSL --retry 3 \
+            -o tts-fa.tar.bz2 \
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fa_IR-amir-medium.tar.bz2"
+
+          tar -xjf tts-fa.tar.bz2
+          cp -r vits-piper-fa_IR-amir-medium/* app/src/main/assets/tts-fa/
+          rm -rf tts-fa.tar.bz2 vits-piper-fa_IR-amir-medium
+
+          ls -lh app/libs/
+          ls -lh app/src/main/assets/tts-fa/
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -26,10 +47,10 @@ jobs:
           cache-disabled: true
 
       - name: Build Debug APK
-        run: gradle assembleDebug --no-daemon --refresh-dependencies --stacktrace
+        run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Amika-AI-Pro-v10-APK
+          name: Amika-AI-Pro-v10-OfflineTTS-APK
           path: app/build/outputs/apk/debug/app-debug.apk
