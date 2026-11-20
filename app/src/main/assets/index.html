@@ -1160,6 +1160,16 @@ select option, select optgroup {
   font-size: 11.5px !important;
 }
 
+
+html[dir="ltr"] .mp-name, html[dir="ltr"] .mp-sub { text-align: left; }
+html[dir="ltr"] .mp-search { padding: 10px 14px 10px 38px; }
+html[dir="ltr"] .mp-search-ico { right: auto; left: 29px; }
+html[dir="ltr"] .msg-ctx-item { text-align: left; }
+html[dir="ltr"] .msg-ctx-item:hover, html[dir="ltr"] .msg-ctx-item:active { transform: translateX(2px); }
+html[dir="ltr"] .sug-card { text-align: left; }
+html[dir="ltr"] .hist-title { text-align: left; }
+html[dir="ltr"] .sel-text-box { text-align: left; }
+
 </style>
 
 <style id="portrait-sidebar-fix">
@@ -3174,8 +3184,9 @@ async function loadFreeModels(manual=false){
     });
     return out.map(it=>{
       const m=state.freeModels.find(x=>x.id===it.id)||{};
+      const isEn = _uiLang === 'en';
       return {...it,
-        name:it.id==='openrouter/free'?'انتخاب خودکار هوشمند':it.text.split(' · ')[0],
+        name:it.id==='openrouter/free'?(isEn?'Auto Smart Selection':'انتخاب خودکار هوشمند'):it.text.split(' · ')[0],
         cap:getCap(it.id),
         ctx:m.context_length?Math.round(m.context_length/1000):0,
         isNew:!!(m.created&&(Date.now()/1000-m.created)<30*86400)};
@@ -3189,15 +3200,16 @@ async function loadFreeModels(manual=false){
     const main=document.createElement('div');main.className='mp-main';
     const nm=document.createElement('div');nm.className='mp-name';nm.dir='auto';nm.textContent=i.name;
     const sub=document.createElement('div');sub.className='mp-sub';
-    sub.textContent=i.id==='openrouter/free'?'به‌صورت خودکار بهترین مدل در دسترس را انتخاب می‌کند':i.id.replace(/:free$/,'');
-    if(i.id==='openrouter/free') sub.style.direction='rtl';
+    const isEn = _uiLang === 'en';
+    sub.textContent=i.id==='openrouter/free'?(isEn?'Automatically picks the best available free model':'به‌صورت خودکار بهترین مدل در دسترس را انتخاب می‌کند'):i.id.replace(/:free$/,'');
+    if(i.id==='openrouter/free') sub.style.direction = isEn ? 'ltr' : 'rtl';
     const tags=document.createElement('div');tags.className='mp-tags';
-    if(i.isNew) tags.append(tag('n','🆕 جدید'));
-    if(i.cap.v) tags.append(tag('v','👁 تصویر'));
-    if(i.cap.r) tags.append(tag('r','🧠 استدلال'));
-    if(isCode(i.id)) tags.append(tag('c','💻 کد'));
+    if(i.isNew) tags.append(tag('n', isEn ? '🆕 New' : '🆕 جدید'));
+    if(i.cap.v) tags.append(tag('v', isEn ? '👁 Vision' : '👁 تصویر'));
+    if(i.cap.r) tags.append(tag('r', isEn ? '🧠 Reasoning' : '🧠 استدلال'));
+    if(isCode(i.id)) tags.append(tag('c', isEn ? '💻 Code' : '💻 کد'));
     if(i.ctx) tags.append(tag('x','◔ '+fmtCtx(i.ctx)));
-    if(i.id==='openrouter/free') tags.append(tag('n','✓ پایدار'));
+    if(i.id==='openrouter/free') tags.append(tag('n', isEn ? '✓ Stable' : '✓ پایدار'));
     main.append(nm,sub);if(tags.children.length) main.append(tags);
     el.append(avatar(i.id),main);
     if(i.id!=='openrouter/free'){
@@ -3212,10 +3224,20 @@ async function loadFreeModels(manual=false){
     return el;
   }
   function header(t){const h=document.createElement('div');h.className='mp-group';h.textContent=t;return h;}
+  function translateGroup(g){
+    if(_uiLang !== 'en') return g;
+    if(g.includes('کدنویسی و استدلال')) return '💻 Coding & Reasoning';
+    if(g.includes('سایر مدل')) return '🌐 Other Free Models';
+    return g;
+  }
   function render(){
+    const isEn = _uiLang === 'en';
     const term=q.value.trim().toLowerCase();
     const all=items();
-    cnt.textContent=fa(all.filter(i=>i.id!=='openrouter/free').length)+' مدل رایگان · لیست زنده از OpenRouter';
+    const totalFree = all.filter(i=>i.id!=='openrouter/free').length;
+    cnt.textContent = isEn
+      ? (totalFree + ' free models · Live list from OpenRouter')
+      : (fa(totalFree) + ' مدل رایگان · لیست زنده از OpenRouter');
     const ok=i=>{
       if(term&&!(i.name+' '+i.id).toLowerCase().includes(term)) return false;
       if(filter==='vision') return !!i.cap.v;
@@ -3229,16 +3251,18 @@ async function loadFreeModels(manual=false){
     list.replaceChildren();
     if(!shown.length){
       const e=document.createElement('div');e.className='mp-empty';
-      e.innerHTML='<b>🔎</b>'+(filter==='fav'?'هنوز مدلی را ستاره‌دار نکرده‌ای.<br>روی ☆ کنار هر مدل بزن.':'مدلی با این مشخصات پیدا نشد.');
+      e.innerHTML='<b>🔎</b>'+(filter==='fav'
+        ?(isEn?'No favorite models yet.<br>Tap ☆ next to any model.':'هنوز مدلی را ستاره‌دار نکرده‌ای.<br>روی ☆ کنار هر مدل بزن.')
+        :(isEn?'No matching models found.':'مدلی با این مشخصات پیدا نشد.'));
       list.append(e);return;
     }
     const auto=shown.find(i=>i.id==='openrouter/free');
     if(auto) list.append(row(auto));
     let rest=shown.filter(i=>i.id!=='openrouter/free');
     const showFavs=filter==='all'&&!term?rest.filter(i=>favs.includes(i.id)):[];
-    if(showFavs.length){list.append(header('⭐ علاقه‌مندی‌ها'));showFavs.forEach(i=>list.append(row(i)));rest=rest.filter(i=>!showFavs.includes(i));}
+    if(showFavs.length){list.append(header(isEn ? '⭐ Favorites' : '⭐ علاقه‌مندی‌ها'));showFavs.forEach(i=>list.append(row(i)));rest=rest.filter(i=>!showFavs.includes(i));}
     let last=null;
-    rest.forEach(i=>{if(i.group!==last){last=i.group;if(last) list.append(header(last));}list.append(row(i));});
+    rest.forEach(i=>{if(i.group!==last){last=i.group;if(last) list.append(header(translateGroup(last)));}list.append(row(i));});
   }
   function choose(id){
     if(sel.value!==id){sel.value=id;sel.dispatchEvent(new Event('change'));}
@@ -4119,6 +4143,10 @@ function formatCtxDate(ts) {
   const d = new Date(ts);
   const now = new Date();
   const isToday = d.toDateString() === now.toDateString();
+  if (_uiLang === 'en') {
+    const timeStr = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    return isToday ? ('Today, ' + timeStr) : (d.toLocaleDateString('en-US') + ' · ' + timeStr);
+  }
   const timeStr = d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
   return isToday ? ('امروز، ' + timeStr) : (d.toLocaleDateString('fa-IR') + ' · ' + timeStr);
 }
@@ -4205,41 +4233,42 @@ function openMsgContextMenu(clientX, clientY, bubble, info) {
     ctxMenu.append(btn);
   }
 
-  // 1. Copy (matches reference)
-  addItem(ICONS.copy, 'کپی متن', () => copyText(cleanPlain));
+  const isEn = _uiLang === 'en';
+  // 1. Copy
+  addItem(ICONS.copy, isEn ? 'Copy text' : 'کپی متن', () => copyText(cleanPlain));
 
-  // 2. Select text (matches reference)
-  addItem(ICONS.select, 'انتخاب بخشی از متن', () => openSelectTextModal(cleanPlain));
+  // 2. Select text
+  addItem(ICONS.select, isEn ? 'Select text' : 'انتخاب بخشی از متن', () => openSelectTextModal(cleanPlain));
 
   // 3. Edit message (for user) or Regenerate (for assistant)
   if (isUser) {
-    addItem(ICONS.edit, 'ویرایش پیام', () => editMessage(info.text || cleanPlain));
+    addItem(ICONS.edit, isEn ? 'Edit message' : 'ویرایش پیام', () => editMessage(info.text || cleanPlain));
   } else {
-    addItem(ICONS.regen, 'تولید پاسخ مجدد', () => regenerate());
+    addItem(ICONS.regen, isEn ? 'Regenerate response' : 'تولید پاسخ مجدد', () => regenerate());
   }
 
   // 4. Read aloud (TTS)
-  addItem(ICONS.speak, ttsActive ? 'توقف خواندن صوتی' : 'خواندن صوتی متن', () => {
+  addItem(ICONS.speak, ttsActive ? (isEn ? 'Stop reading' : 'توقف خواندن صوتی') : (isEn ? 'Read aloud' : 'خواندن صوتی متن'), () => {
     const inlineSpeakBtn = info.wrap?.querySelector('.msg-tools .msg-btn:nth-child(3)');
     toggleSpeak(cleanPlain, inlineSpeakBtn || null);
   });
 
   // 5. Bookmark / Save
   const isBm = state.bookmarks.some(b => b.ts === info.ts);
-  addItem(ICONS.star, isBm ? 'حذف از نشان‌شده‌ها' : 'ذخیره در نشان‌شده‌ها', () => {
+  addItem(ICONS.star, isBm ? (isEn ? 'Remove bookmark' : 'حذف از نشان‌شده‌ها') : (isEn ? 'Save to bookmarks' : 'ذخیره در نشان‌شده‌ها'), () => {
     const dummy = document.createElement('button');
     toggleBookmark(info.ts, info.text || cleanPlain, info.model || '', dummy);
     renderChat();
   });
 
   // 6. Delete this message
-  addItem(ICONS.del, 'حذف این پیام', () => {
+  addItem(ICONS.del, isEn ? 'Delete message' : 'حذف این پیام', () => {
     const c = current();
     if (!c) return;
     c.messages = c.messages.filter(m => m.ts !== info.ts);
     persist();
     renderChat();
-    toast('پیام حذف شد.', 'success', 1800);
+    toast(isEn ? 'Message deleted.' : 'پیام حذف شد.', 'success', 1800);
   }, true);
 
   ctxBackdrop.classList.add('open');
@@ -4545,6 +4574,51 @@ function applyUILang(lang) {
     if(btns[0]) btns[0].textContent = t.copyUser;
     if(btns[1]) btns[1].textContent = t.editBtn;
   });
+
+  // Model Picker static header, search, and filter chips
+  const isEn = lang === 'en';
+  const mpTitle = document.querySelector('#mpBackdrop .mp-title');
+  if (mpTitle) mpTitle.textContent = isEn ? '🤖 Select AI Model' : '🤖 انتخاب مدل هوش مصنوعی';
+  const mpSearch = $('mpSearch');
+  if (mpSearch) mpSearch.placeholder = isEn ? 'Search models… (e.g. deepseek, gemma, code)' : 'جست‌وجوی مدل… (مثلاً deepseek, gemma, code)';
+  const chipLabels = isEn
+    ? { all: 'All', fav: '⭐ Favorites', new: '🆕 New', vision: '👁 Vision', reason: '🧠 Reasoning', code: '💻 Code' }
+    : { all: 'همه', fav: '⭐ علاقه‌مندی', new: '🆕 جدید', vision: '👁 تصویر', reason: '🧠 استدلال', code: '💻 کد' };
+  document.querySelectorAll('#mpChips .mp-chip').forEach(ch => {
+    const k = ch.dataset.f;
+    if (chipLabels[k]) ch.textContent = chipLabels[k];
+  });
+
+  // Settings, SelectText, Sandbox, Shortcuts modals
+  const setH2 = document.querySelector('#settingsModal .modal-head h2');
+  if (setH2) setH2.textContent = isEn ? '⚙️ Amika AI Pro Settings' : '⚙️ تنظیمات Amika AI Pro';
+  const tabModel = document.querySelector('[data-stab="model"]');
+  if (tabModel) tabModel.textContent = isEn ? '🤖 Model' : '🤖 مدل';
+  const apiLbl = $('apiKeyLabel');
+  if (apiLbl) apiLbl.textContent = isEn ? 'OpenRouter API Key' : 'کلید OpenRouter API';
+  const tImg = $('testImage');
+  if (tImg) tImg.textContent = isEn ? 'Test Vision 🖼️' : 'آزمایش تصویر 🖼️';
+  const tCon = $('testConnection');
+  if (tCon) tCon.textContent = isEn ? 'Test Connection' : 'آزمایش اتصال';
+  const cSet2 = $('closeSettings2');
+  if (cSet2) cSet2.textContent = isEn ? 'Cancel' : 'انصراف';
+  const sSet = $('saveSettings');
+  if (sSet) sSet.textContent = isEn ? 'Save Settings' : 'ذخیره تنظیمات';
+
+  const selH2 = document.querySelector('#selectTextModal .modal-head h2');
+  if (selH2) selH2.textContent = isEn ? '📝 Select Text' : '📝 انتخاب بخش دلخواه از متن';
+  const cSelOnly = $('copySelectedOnly');
+  if (cSelOnly) cSelOnly.textContent = isEn ? 'Copy Selected' : 'کپی بخش انتخاب‌شده';
+  const cAllSel = $('copyAllSelBox');
+  if (cAllSel) cAllSel.textContent = isEn ? 'Copy All' : 'کپی کل متن';
+
+  const sbH2 = document.querySelector('#sandboxModal .modal-head h2');
+  if (sbH2) sbH2.textContent = isEn ? '🚀 Live Code Sandbox' : '🚀 اجرای زنده کد (Live Code Sandbox)';
+  const sbNew = $('sandboxNewTab');
+  if (sbNew) sbNew.textContent = isEn ? 'Open in New Tab ↗' : 'باز کردن در تب جدید ↗';
+
+  const scH2 = document.querySelector('#shortcutsModal .modal-head h2');
+  if (scH2) scH2.textContent = isEn ? '⌨️ Keyboard Shortcuts' : '⌨️ کلیدهای میانبر';
 
   // sync custom glass dropdowns if initialized
   if(window.__syncAllGlassSelects) window.__syncAllGlassSelects();
