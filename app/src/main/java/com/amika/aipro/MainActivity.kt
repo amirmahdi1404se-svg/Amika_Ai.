@@ -601,17 +601,90 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
+    private fun resolveSpotifyToSearchQuery(spotifyUrl: String): String? {
+        return try {
+            val oembedUrl = "https://open.spotify.com/oembed?url=" + URLEncoder.encode(spotifyUrl, "UTF-8")
+            val jsonStr = httpGetString(oembedUrl, 10000)
+            if (jsonStr.isNotBlank()) {
+                val title = JSONObject(jsonStr).optString("title", "").trim()
+                if (title.isNotBlank()) return title
+            }
+            val html = httpGetString(spotifyUrl, 10000)
+            val m = Regex("<title>([\\s\\S]*?)</title>", RegexOption.IGNORE_CASE).find(html)
+            val rawTitle = cleanHtmlText(m?.groupValues?.get(1) ?: "")
+                .replace(Regex("\\s*-\\s*song and lyrics by\\s*", RegexOption.IGNORE_CASE), " ")
+                .replace(Regex("\\s*\\|\\s*Spotify.*$", RegexOption.IGNORE_CASE), "")
+                .trim()
+            if (rawTitle.isNotBlank()) rawTitle else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun tryDownloadPageImageFallback(taskId: String, pageUrl: String): Boolean {
+        return try {
+            val html = httpGetString(pageUrl, 12000)
+            if (html.isBlank()) return false
+            val ogMatch = Regex(
+                "<meta[^>]+property=[\"']og:image[\"'][^>]+content=[\"']([^\"']+)[\"']|<meta[^>]+content=[\"']([^\"']+)[\"'][^>]+property=[\"']og:image[\"']",
+                RegexOption.IGNORE_CASE
+            ).find(html)
+            val imgUrl = (ogMatch?.groupValues?.get(1)?.ifBlank { ogMatch.groupValues[2] } ?: "").trim()
+            if (!imgUrl.startsWith("http")) return false
+
+            emitDownloadEvent(taskId, "progress", 65, "تصویر صفحه شناسایی شد · در حال دانلود...")
+            val conn = (URL(imgUrl).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 15000
+                readTimeout = 20000
+                instanceFollowRedirects = true
+            }
+            if (conn.responseCode !in 200..299) return false
+            val mime = conn.contentType?.substringBefore(";") ?: "image/jpeg"
+            val bytes = conn.inputStream.use { it.readBytes() }
+            conn.disconnect()
+            if (bytes.isEmpty()) return false
+
+            val ext = when {
+                mime.contains("png") -> ".png"
+                mime.contains("webp") -> ".webp"
+                else -> ".jpg"
+            }
+            val fname = "amika_pin_${System.currentTimeMillis()}$ext"
+            saveBytesToAmikaFolder(fname, bytes, mime)
+            emitDownloadEvent(taskId, "done", 100, "تصویر با موفقیت دانلود شد ✓\nمسیر ذخیره: Downloads/AmikaAI/Images/$fname")
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private fun runUniversalDownload(taskId: String, rawUrl: String, mode: String) {
-        val url = rawUrl.trim()
+        var url = rawUrl.trim()
+        var effectiveMode = mode
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
             emitDownloadEvent(taskId, "error", 0, "لینک معتبر نیست (باید با http یا https شروع شود).")
             return
         }
 
-        if (mode == "direct" || (mode != "audio" && isDirectFileUrl(url))) {
+        if (effectiveMode == "direct" || (effectiveMode != "audio" && isDirectFileUrl(url))) {
             emitDownloadEvent(taskId, "progress", 15, "تشخیص فایل مستقیم · ارسال به DownloadManager اندروید...")
             startAndroidDownloadManager(taskId, url)
             return
+        }
+
+        // پشتیبانی هوشمند از لینک Spotify (استخراج نام آهنگ و دانلود نسخه باکیفیت MP3 بدون DRM)
+        if (url.contains("spotify.com/", ignoreCase = true)) {
+            emitDownloadEvent(taskId, "progress", 8, "لینک Spotify تشخیص داده شد · در حال استخراج نام آهنگ و جست‌وجوی نسخه بدون DRM...")
+            val trackQuery = resolveSpotifyToSearchQuery(url)
+            if (trackQuery != null) {
+                url = "ytsearch1:$trackQuery audio"
+                effectiveMode = "audio"
+                emitDownloadEvent(taskId, "progress", 18, "آهنگ پیدا شد: $trackQuery · در حال دانلود MP3...")
+            } else {
+                emitDownloadEvent(taskId, "error", 0, "نام آهنگ از لینک Spotify قابل دریافت نبود (اتصال اینترنت / فیلترشکن را بررسی کنید).")
+                return
+            }
         }
 
         emitDownloadEvent(taskId, "progress", 5, "در حال آماده‌سازی هسته yt-dlp + FFmpeg + aria2c...")
@@ -631,8 +704,12 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             request.addOption("--no-mtime")
             request.addOption("--no-playlist")
             request.addOption("--restrict-filenames")
+            request.addOption("--force-ipv4")
+            request.addOption("--socket-timeout", "25")
+            request.addOption("--retries", "3")
+            request.addOption("--no-check-certificates")
 
-            if (mode == "audio") {
+            if (effectiveMode == "audio") {
                 request.addOption("-x")
                 request.addOption("--audio-format", "mp3")
                 request.addOption("--audio-quality", "0")
@@ -660,7 +737,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             }
 
             val savedPaths = mutableListOf<String>()
-            val targetSub = if (mode == "audio") "Audio" else "Videos"
+            val targetSub = if (effectiveMode == "audio") "Audio" else "Videos"
             for (f in downloadedFiles) {
                 val path = saveFileStreamToAmikaFolder(f, targetSub)
                 savedPaths.add(path)
@@ -675,10 +752,20 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         } catch (e: Exception) {
             tempDir.deleteRecursively()
             val errMsg = e.message ?: "خطای ناشناخته"
-            // اگر yt-dlp لینک را نشناخت، به‌صورت خودکار با DownloadManager امتحان کن
+            // اگر لینک ویدیو نداشت (مثلاً عکس پینترست) یا پشتیبانی نشد، تلاش برای استخراج تصویر صفحه
+            if ((errMsg.contains("No video formats", ignoreCase = true) ||
+                 errMsg.contains("Unsupported URL", ignoreCase = true) ||
+                 rawUrl.contains("pin.it", ignoreCase = true) ||
+                 rawUrl.contains("pinterest.", ignoreCase = true)) &&
+                tryDownloadPageImageFallback(taskId, rawUrl.trim())
+            ) {
+                return
+            }
             if (errMsg.contains("Unsupported URL", ignoreCase = true)) {
                 emitDownloadEvent(taskId, "progress", 30, "ارسال خودکار به دانلودر مستقیم اندروید...")
-                startAndroidDownloadManager(taskId, url)
+                startAndroidDownloadManager(taskId, rawUrl.trim())
+            } else if (errMsg.contains("timed out", ignoreCase = true) || errMsg.contains("handshake", ignoreCase = true)) {
+                emitDownloadEvent(taskId, "error", 0, "اتصال به این سایت برقرار نشد (Timeout). اگر سایت فیلتر است، فیلترشکن (VPN) را روشن یا سرور آن را عوض کنید.")
             } else {
                 emitDownloadEvent(taskId, "error", 0, "خطا در دانلود: ${errMsg.take(260)}")
             }
