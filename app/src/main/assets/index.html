@@ -1265,6 +1265,28 @@ html[dir="ltr"] .sel-text-box { text-align: left; }
 .persona-card b { font-size: 12.5px; color: #f8fbff; }
 .persona-card span { font-size: 11px; color: var(--text2); }
 
+
+/* ══ Universal Downloader Progress Bar ══ */
+.dl-prog-wrap {
+  width: 100%; height: 10px; border-radius: 999px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid var(--border2);
+  overflow: hidden; margin: 8px 0 4px;
+}
+.dl-prog-fill {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, var(--blue), var(--violet));
+  border-radius: 999px;
+  transition: width 0.25s ease;
+  box-shadow: 0 0 12px rgba(56,189,248,0.55);
+}
+.dl-chat-card {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 12px 14px; border-radius: 16px;
+  background: rgba(56,189,248,0.08);
+  border: 1px solid rgba(56,189,248,0.35);
+}
+
 </style>
 
 <style id="portrait-sidebar-fix">
@@ -1664,6 +1686,9 @@ button, input, textarea, select { max-width: 100%; }
         </button>
         <button type="button" class="side-action" id="exportChat">
           <span class="side-action-label"><span class="side-action-icon">⇩</span>خروجی JSON</span>
+        </button>
+        <button type="button" class="side-action" id="openDownloader">
+          <span class="side-action-label"><span class="side-action-icon">⬇️</span>دانلودر همه‌کاره (Universal)</span>
         </button>
         <button type="button" class="side-action" id="openDeepResearch">
           <span class="side-action-label"><span class="side-action-icon">🔬</span>تحقیق عمیق (Deep Research)</span>
@@ -2109,6 +2134,7 @@ button, input, textarea, select { max-width: 100%; }
       <button type="button" class="super-tab" data-sap="workspace">📝 فضای کاری</button>
       <button type="button" class="super-tab" data-sap="assistants">🤖 دستیارها و Agent</button>
       <button type="button" class="super-tab" data-sap="utils">🧮 ابزارها</button>
+      <button type="button" class="super-tab" data-sap="downloader">⬇️ دانلودر همه‌کاره</button>
     </div>
 
     <!-- 1. Deep Research Pane -->
@@ -2203,6 +2229,29 @@ button, input, textarea, select { max-width: 100%; }
         </div>
         <div class="sa-log" id="agentLog" style="display:none"></div>
       </div>
+    </div>
+
+    <!-- 6. Universal Downloader (yt-dlp + FFmpeg + aria2c + DownloadManager) -->
+    <div class="super-pane" id="sap-downloader">
+      <div class="sa-card">
+        <b style="font-size:13px">⬇️ دانلودر همه‌کاره (یوتیوب، اینستاگرام، تیک‌تاک، آپارات و هر لینک مستقیم)</b>
+        <input class="field" id="udlUrlInput" type="url" placeholder="لینک ویدیو، صدا یا فایل را اینجا پیست کن (https://...)" dir="ltr">
+        <div class="sa-row">
+          <select class="field" id="udlModeSel" style="flex:1">
+            <option value="video">🎬 ویدیو (بهترین کیفیت MP4)</option>
+            <option value="audio">🎵 فقط صدا (MP3 باکیفیت)</option>
+            <option value="direct">📦 فایل مستقیم (DownloadManager اندروید)</option>
+          </select>
+          <button type="button" class="btn-new" id="udlStartBtn" style="padding:8px 18px">⬇️ شروع دانلود</button>
+          <button type="button" class="btn-glass-action" id="udlCancelBtn" style="display:none;padding:8px 14px;color:#fda4af">■ لغو</button>
+        </div>
+        <div class="dl-prog-wrap" id="udlProgWrap" style="display:none"><div class="dl-prog-fill" id="udlProgFill"></div></div>
+        <div id="udlStatusText" style="font-size:12px;color:var(--text2);line-height:1.7">تمام فایل‌ها خودکار داخل پوشه <b>Downloads/AmikaAI</b> دسته‌بندی و ذخیره می‌شوند. همچنین می‌توانی مستقیم داخل چت بنویسی: «دانلود کن + لینک»</div>
+        <div class="sa-row" style="justify-content:flex-end">
+          <button type="button" class="btn-glass-action" id="udlUpdateCoreBtn" style="padding:6px 12px;font-size:11.5px">↻ آپدیت خودکار هسته yt-dlp</button>
+        </div>
+      </div>
+      <div class="sa-list" id="udlHistoryList"></div>
     </div>
 
     <!-- 5. AI Utilities (Calculator, Unit Converter, Text Diff) -->
@@ -3236,6 +3285,10 @@ async function send(){
   const att=state.attachment;
   if(!text&&!att) return;
 
+  if (text && window.__amikaTryChatDownload && window.__amikaTryChatDownload(text)) {
+    els.prompt.value='';autosize();updateCharCounter();setAttachment(null);
+    return;
+  }
   if(!providerReady()){openSettings();document.querySelector('[data-stab="api"]')?.click();toast(PROVIDERS[state.provider].needsKey&&!state.key?'ابتدا کلید API را در تنظیمات وارد کن.':'آدرس یا نام مدل را در تنظیمات کامل کن.','error');return;}
 
   if(!current()) newChat();
@@ -5582,6 +5635,7 @@ window.__handleAndroidBack = function() {
   $('openWorkspace')?.addEventListener('click', () => openSuperTab('workspace'));
   $('openAssistants')?.addEventListener('click', () => openSuperTab('assistants'));
   $('openUtilities')?.addEventListener('click', () => openSuperTab('utils'));
+  $('openDownloader')?.addEventListener('click', () => openSuperTab('downloader'));
   $('closeSuperApp')?.addEventListener('click', () => superModal.classList.remove('open'));
   superModal?.addEventListener('click', e => { if (e.target === superModal) superModal.classList.remove('open'); });
   document.querySelectorAll('.super-tab').forEach(t => t.addEventListener('click', () => openSuperTab(t.dataset.sap)));
@@ -6306,6 +6360,165 @@ window.__handleAndroidBack = function() {
   $('openAssistants')?.addEventListener('click', renderReadyPersonas);
   document.querySelector('[data-sap="assistants"]')?.addEventListener('click', renderReadyPersonas);
   renderReadyPersonas();
+})();
+
+/* ══════════════════════════════════════════════════════════════════════════
+   AMIKA UNIVERSAL DOWNLOADER BRIDGE (yt-dlp + FFmpeg + aria2c + DownloadManager)
+   ══════════════════════════════════════════════════════════════════════════ */
+(function initUniversalDownloader() {
+  const activeTasks = {};
+  let currentModalTaskId = null;
+
+  function getDlHistory() {
+    try { return JSON.parse(localStorage.getItem('amika_v4_dl_hist') || '[]'); } catch { return []; }
+  }
+  function addDlHistory(entry) {
+    const list = getDlHistory();
+    list.unshift(entry);
+    localStorage.setItem('amika_v4_dl_hist', JSON.stringify(list.slice(0, 20)));
+    renderDlHistory();
+  }
+  function renderDlHistory() {
+    const box = $('udlHistoryList');
+    if (!box) return;
+    box.replaceChildren();
+    const list = getDlHistory();
+    if (!list.length) {
+      box.innerHTML = '<div style="font-size:12px;color:var(--text3);text-align:center;padding:8px">هنوز دانلودی ثبت نشده است.</div>';
+      return;
+    }
+    list.forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'sa-item';
+      row.innerHTML = `<div style="min-width:0;flex:1"><div style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" dir="ltr">${esc(item.url)}</div><div style="font-size:11px;color:${item.ok ? 'var(--green)' : '#fda4af'}">${esc(item.msg)}</div></div>`;
+      box.append(row);
+    });
+  }
+
+  window.__onNativeDownloadEvent = function(taskId, status, progress, message) {
+    if (taskId === 'core_update') {
+      if ($('udlStatusText')) $('udlStatusText').textContent = message;
+      toast(message, status === 'error' ? 'error' : 'success', 3500);
+      return;
+    }
+    const handler = activeTasks[taskId];
+    if (handler) handler(status, progress, message);
+    if (status === 'done' || status === 'error') {
+      delete activeTasks[taskId];
+    }
+  };
+
+  function startDownloadInModal() {
+    const url = ($('udlUrlInput')?.value || '').trim();
+    const mode = $('udlModeSel')?.value || 'video';
+    if (!url || !/^https?:\/\//i.test(url)) {
+      toast('لطفاً یک لینک معتبر (با http یا https) وارد کنید.', 'error');
+      return;
+    }
+    if (!(window.AmikaNative && typeof window.AmikaNative.startUniversalDownload === 'function')) {
+      toast('این دانلودر بومی داخل اپلیکیشن اندروید (APK) کار می‌کند.', 'error', 4000);
+      return;
+    }
+    const taskId = 'dl_' + Date.now();
+    currentModalTaskId = taskId;
+    $('udlStartBtn').disabled = true;
+    $('udlCancelBtn').style.display = 'inline-flex';
+    $('udlProgWrap').style.display = 'block';
+    $('udlProgFill').style.width = '5%';
+    $('udlStatusText').textContent = 'در حال شروع دانلود...';
+
+    activeTasks[taskId] = (status, pct, msg) => {
+      $('udlProgFill').style.width = Math.max(4, Math.min(100, pct)) + '%';
+      $('udlStatusText').textContent = msg;
+      if (status === 'done' || status === 'error') {
+        $('udlStartBtn').disabled = false;
+        $('udlCancelBtn').style.display = 'none';
+        currentModalTaskId = null;
+        addDlHistory({ url, ok: status === 'done', msg, ts: Date.now() });
+        toast(status === 'done' ? 'دانلود تکمیل شد ✓' : 'خطا در دانلود', status === 'done' ? 'success' : 'error', 3500);
+      }
+    };
+    window.AmikaNative.startUniversalDownload(url, mode, taskId);
+  }
+
+  $('udlStartBtn')?.addEventListener('click', startDownloadInModal);
+  $('udlCancelBtn')?.addEventListener('click', () => {
+    if (currentModalTaskId && window.AmikaNative?.cancelUniversalDownload) {
+      window.AmikaNative.cancelUniversalDownload(currentModalTaskId);
+    }
+  });
+  $('udlUpdateCoreBtn')?.addEventListener('click', () => {
+    if (window.AmikaNative?.updateDownloaderCore) {
+      window.AmikaNative.updateDownloaderCore();
+    } else {
+      toast('آپدیت هسته فقط داخل APK کار می‌کند.', 'error');
+    }
+  });
+  $('openDownloader')?.addEventListener('click', renderDlHistory);
+  document.querySelector('[data-sap="downloader"]')?.addEventListener('click', renderDlHistory);
+
+  // Direct download right inside the chat! (works even without OpenRouter API key)
+  window.__amikaTryChatDownload = function(text) {
+    if (!(window.AmikaNative && typeof window.AmikaNative.startUniversalDownload === 'function')) return false;
+    const urlMatch = text.match(/https?:\/\/[^\s<>"{}|\\^`\[\]]+/i);
+    if (!urlMatch) return false;
+    const hasDlIntent = /(دانلود|بگیر|ذخیره|download|dl\b|mp3|mp4)/i.test(text);
+    if (!hasDlIntent) return false;
+
+    const url = urlMatch[0];
+    const mode = /(mp3|صوتی|آهنگ|موزیک|صدا|audio)/i.test(text)
+      ? 'audio'
+      : (/(مستقیم|direct|فایل)/i.test(text) ? 'direct' : 'video');
+
+    if (!current()) newChat();
+    const c = current();
+    const ts = Date.now();
+    c.messages.push({ role: 'user', content: text, displayText: text, ts });
+    if (c.title === 'گفت‌وگوی جدید') c.title = 'دانلود: ' + url.replace(/^https?:\/\//, '').slice(0, 28);
+    persist();
+    addMessage('user', text, '', null, true, ts);
+
+    const taskId = 'chat_dl_' + Date.now();
+    const msgObj = addMessage('assistant', '', 'Universal Downloader', null, true, Date.now(), null);
+    msgObj.body.innerHTML = `
+      <div class="dl-chat-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+          <b>⬇️ دانلودر همه‌کاره Amika (${mode === 'audio' ? 'صوتی MP3' : mode === 'direct' ? 'فایل مستقیم' : 'ویدیو MP4'})</b>
+          <button type="button" class="code-btn" id="cancel_${taskId}" style="color:#fda4af">لغو ✕</button>
+        </div>
+        <div style="font-size:11.5px;color:#93c5fd;direction:ltr;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(url)}</div>
+        <div class="dl-prog-wrap"><div class="dl-prog-fill" id="bar_${taskId}" style="width:6%"></div></div>
+        <div id="st_${taskId}" style="font-size:12px;color:var(--text2)">در حال اتصال به هسته yt-dlp + FFmpeg + aria2c...</div>
+      </div>`;
+
+    const cancelBtn = $('cancel_' + taskId);
+    if (cancelBtn) {
+      cancelBtn.onclick = () => {
+        window.AmikaNative.cancelUniversalDownload(taskId);
+        cancelBtn.disabled = true;
+      };
+    }
+
+    activeTasks[taskId] = (status, pct, msg) => {
+      const bar = $('bar_' + taskId);
+      const st = $('st_' + taskId);
+      if (bar) bar.style.width = Math.max(4, Math.min(100, pct)) + '%';
+      if (st) {
+        st.textContent = msg;
+        if (status === 'done') st.style.color = 'var(--green)';
+        if (status === 'error') st.style.color = '#fda4af';
+      }
+      if (status === 'done' || status === 'error') {
+        if (cancelBtn) cancelBtn.style.display = 'none';
+        addDlHistory({ url, ok: status === 'done', msg, ts: Date.now() });
+        c.messages.push({ role: 'assistant', content: msg, displayText: msg, model: 'Universal Downloader', ts: Date.now() });
+        persist();
+      }
+    };
+
+    window.AmikaNative.startUniversalDownload(url, mode, taskId);
+    return true;
+  };
 })();
 });
 </script>
